@@ -1,0 +1,531 @@
+<template>
+  <div class="mini-page" :class="{ dark: darkMode }">
+    <!-- Header -->
+    <header class="header glass">
+      <div class="brand">
+        <img class="logo" :src="profile.pic" alt="avatar" />
+        <div>
+          <h1 class="site-title">{{ profile.name }}</h1>
+          <p class="site-role">{{ profile.role }}</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button
+          v-for="link in links"
+          :key="link.view"
+          @click="navigate(link.view)"
+          :class="{ active: route.view === link.view }"
+          :aria-current="route.view === link.view ? 'page' : null"
+        >
+          {{ link.label }}
+        </button>
+        <button class="icon-btn" @click="toggleDark">
+          <span v-if="darkMode">☀️</span>
+          <span v-else>🌙</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Main / Page content with directional transitions -->
+    <transition :name="transitionName" mode="out-in">
+      <main class="content" :key="route.view">
+        <component :is="currentPageComponent" @open-project="openProject" />
+      </main>
+    </transition>
+
+    <!-- Sidebar (contact + quick links) -->
+    <aside class="sidebar glass">
+      <section class="card">
+        <h3>Contact</h3>
+        <p>{{ profile.tagline }}</p>
+        <a :href="`mailto:${profile.email}`" class="btn">Email me</a>
+      </section>
+
+      <section class="card">
+        <h3>Quick Links</h3>
+        <ul class="list">
+          <li><a @click.prevent="navigate('projects')" href="#/projects">Projects</a></li>
+          <li><a @click.prevent="navigate('about')" href="#/about">About</a></li>
+          <li><a @click.prevent="downloadResume" href="#">Download Résumé</a></li>
+        </ul>
+      </section>
+
+      <section class="card small">
+        <h4>Visitors</h4>
+        <p class="muted">{{ visitors }} this week</p>
+      </section>
+    </aside>
+
+    <!-- Footer -->
+    <footer class="footer glass">
+      <div class="footer-left">
+        <small>© {{ new Date().getFullYear() }} {{ profile.name }}</small>
+      </div>
+      <div class="footer-right">
+        <a v-for="s in profile.socials" :key="s.icon" :href="s.href" target="_blank" rel="noreferrer" class="social">
+          {{ s.icon }}
+        </a>
+      </div>
+    </footer>
+
+    <!-- Project modal -->
+    <div v-if="activeProject" class="modal-backdrop" @click.self="closeProject">
+      <article class="modal glass" role="dialog" aria-modal="true">
+        <button class="close" @click="closeProject">✕</button>
+        <h3>{{ activeProject.title }}</h3>
+        <p class="muted">{{ activeProject.date }} • {{ activeProject.tech.join(' · ') }}</p>
+        <p>{{ activeProject.description }}</p>
+        <div class="links">
+          <a v-if="activeProject.live" :href="activeProject.live" target="_blank">Live</a>
+          <a v-if="activeProject.repo" :href="activeProject.repo" target="_blank">Repo</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</template>
+
+<script setup>
+/* Composition API / script-setup */
+import { ref, reactive, computed, watch, onMounted } from "vue";
+
+/* ---------- User content (customize) ---------- */
+const profile = reactive({
+  name: "Daniel John",
+  role: "Full-Stack Web Engineer",
+  tagline: "Building modern, scalable web apps & delightful UI.",
+  email: "you@example.com",
+  pic: "https://via.placeholder.com/96",
+  socials: [
+    { icon: "🐙 GitHub", href: "https://github.com/" },
+    { icon: "💼 LinkedIn", href: "https://linkedin.com/" }
+  ]
+});
+
+/* ---------- UI state ---------- */
+const darkMode = ref(JSON.parse(localStorage.getItem("miniSPADark") || "false"));
+const visitors = ref(512);
+const route = reactive({ view: "home", param: null });
+const transitionName = ref("slide-left");
+const historyStack = ref(["home"]);
+
+/* Persist dark mode */
+watch(darkMode, v => localStorage.setItem("miniSPADark", JSON.stringify(v)));
+
+/* ---------- Routing (hash-based) ---------- */
+const links = [
+  { label: "Home", view: "home" },
+  { label: "About", view: "about" },
+  { label: "Projects", view: "projects" },
+  { label: "Blog", view: "blog" },
+  { label: "Contact", view: "contact" }
+];
+
+function parseHash() {
+  const hash = window.location.hash.replace("#/", "") || "home";
+  const [view, param] = hash.split("/");
+  return { view, param: param || null };
+}
+function setRoute(view, param = null, push = true) {
+  // determine direction for slide animation
+  const last = historyStack.value[historyStack.value.length - 1];
+  const lastIndex = links.findIndex(l => l.view === last);
+  const nextIndex = links.findIndex(l => l.view === view);
+  transitionName.value = nextIndex >= lastIndex ? "slide-left" : "slide-right";
+
+  if (push) historyStack.value.push(view);
+  route.view = view;
+  route.param = param;
+  document.title = `${capitalize(view)} · ${profile.name}`;
+}
+function navigate(view) {
+  // push state and update hash
+  history.pushState({}, "", `#/${view}`);
+  setRoute(view, null, true);
+}
+
+/* handle back/forward */
+window.addEventListener("popstate", () => {
+  const { view, param } = parseHash();
+  setRoute(view, param, false);
+});
+
+/* initialize from URL */
+onMounted(() => {
+  const { view, param } = parseHash();
+  setRoute(view, param, false);
+});
+
+/* ---------- Page components as inline async components ---------- */
+
+/* HOME / INTRO component */
+const HomePage = {
+  name: "HomePage",
+  setup() {
+    return () => (
+      <section class="intro glass">
+        <img class="profile-pic" src={profile.pic} alt="profile" />
+        <h2>Hello — I’m {profile.name} 👋</h2>
+        <p class="lead">{profile.tagline}</p>
+        <p>
+          I build full-stack apps with a focus on performance, accessibility, and polished UX.
+          Currently focused on Vue, Node.js, and cloud platforms.
+        </p>
+        <div class="cta-row">
+          <button class="btn" onClick={() => (window.location.hash = "#/projects")}>View Projects</button>
+          <button class="btn ghost" onClick={() => (window.location.hash = "#/contact")}>Contact Me</button>
+        </div>
+      </section>
+    );
+  }
+};
+
+/* ABOUT component */
+const AboutPage = {
+  name: "AboutPage",
+  setup() {
+    return () => (
+      <section class="glass about">
+        <h2>About</h2>
+        <p>
+          I’m a web engineer with experience across the stack: API design, databases, frontend
+          architecture, and UX. I enjoy mentoring and open-source collaboration.
+        </p>
+        <h3>Skills</h3>
+        <ul class="skills">
+          <li>Vue 3 / Composition API</li>
+          <li>TypeScript & Node.js</li>
+          <li>Postgres, Redis</li>
+          <li>CI/CD & cloud (AWS/GCP)</li>
+        </ul>
+      </section>
+    );
+  }
+};
+
+/* PROJECTS component (lazy loaded simulation) */
+const ProjectsPage = {
+  name: "ProjectsPage",
+  emits: ["open-project"],
+  setup(props, ctx) {
+    const loading = ref(true);
+    const projects = ref([]);
+    const query = ref("");
+    const selectedTag = ref(null);
+    const tags = ref([]);
+
+    function fetchProjects() {
+      // Simulate async fetch — replace with real fetch('/api/projects') if needed
+      loading.value = true;
+      setTimeout(() => {
+        const sample = [
+          {
+            id: "p1",
+            title: "Taskly — Productivity App",
+            description: "A modern task manager with offline sync and smart scheduling.",
+            tech: ["Vue", "Pinia", "PWA"],
+            date: "2024-11-01",
+            live: "#",
+            repo: "#"
+          },
+          {
+            id: "p2",
+            title: "Streamline Ecom",
+            description: "Headless e-commerce with real-time inventory.",
+            tech: ["Nuxt", "Stripe", "Postgres"],
+            date: "2023-08-12",
+            live: "#",
+            repo: "#"
+          },
+          {
+            id: "p3",
+            title: "DataViz Dashboard",
+            description: "Interactive dashboards for analytics.",
+            tech: ["React", "D3", "Node"],
+            date: "2022-05-05",
+            live: "#",
+            repo: "#"
+          }
+        ];
+        projects.value = sample;
+        tags.value = [...new Set(sample.flatMap(p => p.tech))];
+        loading.value = false;
+      }, 600);
+    }
+
+    onMounted(() => fetchProjects());
+
+    const filtered = computed(() =>
+      projects.value.filter(p =>
+        (p.title + p.description + p.tech.join(" ")).toLowerCase().includes(query.value.toLowerCase()) &&
+        (selectedTag.value ? p.tech.includes(selectedTag.value) : true)
+      )
+    );
+
+    return () => (
+      <section class="glass projects">
+        <div class="row">
+          <div>
+            <h2>Projects</h2>
+            <p class="muted">Selected works — click a card for details.</p>
+          </div>
+
+          <div class="controls">
+            <input class="search" placeholder="Search projects..." v-model={query.value} />
+            <select class="select" v-model={selectedTag.value}>
+              <option value="">All tech</option>
+              {tags.value.map(t => <option value={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {loading.value ? (
+          <div class="loading">Fetching projects…</div>
+        ) : (
+          <div class="grid">
+            {filtered.value.map(p => (
+              <article class="card project-card" key={p.id} onClick={() => ctx.emit("open-project", p)}>
+                <h3>{p.title}</h3>
+                <p class="muted">{p.date} • {p.tech.join(" · ")}</p>
+                <p class="desc">{p.description}</p>
+                <div class="tags">{p.tech.map(t => <span class="tag">{t}</span>)}</div>
+              </article>
+            ))}
+            {filtered.value.length === 0 && <p class="muted">No projects match.</p>}
+          </div>
+        )}
+      </section>
+    );
+  }
+};
+
+/* BLOG component (simulated lazy load) */
+const BlogPage = {
+  name: "BlogPage",
+  setup() {
+    const loading = ref(true);
+    const posts = ref([]);
+    onMounted(() => {
+      setTimeout(() => {
+        posts.value = [
+          { id: 1, title: "Optimizing Vue Apps", date: "2025-02-10", excerpt: "Tips to make your Vue app faster..." },
+          { id: 2, title: "Designing for Accessibility", date: "2024-10-05", excerpt: "Accessibility is not optional..." }
+        ];
+        loading.value = false;
+      }, 500);
+    });
+    return () => (
+      <section class="glass blog">
+        <h2>Blog</h2>
+        {loading.value ? <div class="loading">Loading posts…</div> : (
+          <ul class="posts">
+            {posts.value.map(p => (
+              <li key={p.id}>
+                <h3>{p.title}</h3>
+                <p class="muted">{p.date}</p>
+                <p>{p.excerpt}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    );
+  }
+};
+
+/* CONTACT page */
+const ContactPage = {
+  name: "ContactPage",
+  setup() {
+    const form = reactive({ name: "", email: "", message: "" });
+    const submitted = ref(false);
+
+    onMounted(() => {
+      const s = localStorage.getItem("miniPortfolioContact");
+      if (s) Object.assign(form, JSON.parse(s));
+    });
+
+    watch(
+      () => form,
+      v => localStorage.setItem("miniPortfolioContact", JSON.stringify(form)),
+      { deep: true }
+    );
+
+    function send() {
+      // Implement real submission: fetch('/api/contact', {method: 'POST', body: JSON.stringify(form)})
+      submitted.value = true;
+      setTimeout(() => alert("Message sent (simulated) — replace with your API"), 300);
+    }
+
+    return () => (
+      <section class="glass contact">
+        <h2>Contact</h2>
+        <form onSubmit={e => { e.preventDefault(); send(); }}>
+          <label>Name<input required v-model={form.name} /></label>
+          <label>Email<input type="email" required v-model={form.email} /></label>
+          <label>Message<textarea rows="5" v-model={form.message}></textarea></label>
+          <div class="row">
+            <button class="btn" type="submit">Send</button>
+            <button class="btn ghost" type="button" onClick={() => (window.location.hash = "#/projects")}>View Projects</button>
+          </div>
+          {submitted.value && <p class="muted">Thanks — I’ll get back to you soon.</p>}
+        </form>
+      </section>
+    );
+  }
+};
+
+/* ---------- Top-level logic for dynamic component selection & modal ---------- */
+const activeProject = ref(null);
+
+function openProject(p) {
+  activeProject.value = p;
+}
+function closeProject() {
+  activeProject.value = null;
+}
+
+const currentPageComponent = computed(() => {
+  switch (route.view) {
+    case "about":
+      return AboutPage;
+    case "projects":
+      return ProjectsPage;
+    case "blog":
+      return BlogPage;
+    case "contact":
+      return ContactPage;
+    default:
+      return HomePage;
+  }
+});
+
+/* transition & dark mode helpers */
+function toggleDark() {
+  darkMode.value = !darkMode.value;
+}
+
+/* resume download (client-generated placeholder PDF) */
+function downloadResume() {
+  const blob = new Blob(
+    [`${profile.name} — Résumé\n\nRole: ${profile.role}\n\nDownload and replace this with a real PDF file.`],
+    { type: "application/pdf" }
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${profile.name.replace(/\s+/g, "_")}_Resume.pdf`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* small utility */
+function capitalize(s) { return (s && s[0].toUpperCase() + s.slice(1)) || ""; }
+
+/* expose to template */
+const visitorsValue = visitors; // alias for template usage
+</script>
+
+<style scoped>
+/* ---------- Layout ---------- */
+.mini-page {
+  display: grid;
+  grid-template-areas:
+    "header header"
+    "content sidebar"
+    "footer footer";
+  grid-template-columns: 2fr 300px;
+  gap: 1rem;
+  padding: 1.25rem;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: linear-gradient(135deg,#f3fbff 0%, #fff 100%);
+  color: #0f172a;
+  transition: background .4s, color .3s;
+}
+.dark {
+  background: linear-gradient(135deg,#0b1220 0%, #111827 100%);
+  color: #e6eef8;
+}
+
+/* glass card */
+.glass {
+  background: rgba(255,255,255,0.6);
+  padding: 1rem;
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(2,6,23,0.08);
+  backdrop-filter: blur(8px);
+}
+.dark .glass { background: rgba(255,255,255,0.03); box-shadow: 0 6px 30px rgba(2,6,23,0.35); }
+
+/* header */
+.header { grid-area: header; display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+.brand { display:flex; align-items:center; gap:0.75rem; }
+.logo { width:56px; height:56px; border-radius:12px; object-fit:cover; }
+.site-title { margin:0; font-size:1.1rem; font-weight:600; }
+.site-role { margin:0; font-size:0.85rem; color: #555; }
+.dark .site-role { color: #9fb0c8; }
+
+.nav { display:flex; align-items:center; gap:0.5rem; }
+.nav button { background:transparent; border:0; padding:0.45rem 0.7rem; border-radius:8px; cursor:pointer; font-weight:500; color:inherit; }
+.nav button.active { background:#0ea5a5; color:white; box-shadow:0 6px 18px rgba(14,165,165,0.12); }
+.icon-btn { padding:0.45rem; border-radius:8px; }
+
+/* main content */
+.content { grid-area: content; min-height:60vh; display:flex; align-items:flex-start; }
+.intro { display:flex; flex-direction:column; gap:0.5rem; max-width:760px; }
+.profile-pic { width:120px; height:120px; border-radius:16px; object-fit:cover; box-shadow:0 8px 30px rgba(2,6,23,0.08); }
+.lead { font-size:1.05rem; margin:0.5rem 0 0; color:#334155; }
+.dark .lead { color:#cfe8f3; }
+
+/* sidebar */
+.sidebar { grid-area: sidebar; display:flex; flex-direction:column; gap:0.75rem; align-self:start; }
+.card { padding:0.75rem; border-radius:10px; }
+.card.small { padding:0.5rem; }
+.btn { display:inline-block; text-decoration:none; padding:0.6rem 0.9rem; border-radius:10px; background:#0ea5a5; color:white; border:0; cursor:pointer; }
+.btn.ghost { background:transparent; border:1px solid rgba(15,23,42,0.06); color:inherit; }
+
+/* footer */
+.footer { grid-area: footer; display:flex; justify-content:space-between; align-items:center; padding:0.5rem 1rem; font-size:0.9rem; }
+
+/* projects grid */
+.projects .row { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:0.75rem }
+.controls { display:flex; gap:0.5rem; align-items:center; }
+.search { padding:0.45rem; border-radius:8px; border:1px solid #e6eef8; }
+.select { padding:0.45rem; border-radius:8px; border:1px solid #e6eef8; }
+.grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap:0.75rem; margin-top:0.9rem; }
+.project-card { cursor:pointer; padding:0.9rem; border-radius:10px; transition:transform .18s ease, box-shadow .18s ease; }
+.project-card:hover { transform:translateY(-6px); box-shadow:0 14px 40px rgba(2,6,23,0.08); }
+.tag { display:inline-block; margin-right:0.35rem; background:rgba(15,23,42,0.06); padding:0.18rem 0.4rem; border-radius:6px; font-size:0.75rem; }
+
+/* blog */
+.posts li { margin-bottom:1rem; }
+
+/* forms */
+label { display:block; margin:0.5rem 0; font-weight:500; }
+input, textarea { width:100%; padding:0.55rem; border-radius:8px; border:1px solid rgba(2,6,23,0.06); background:transparent; }
+.row { display:flex; gap:0.5rem; align-items:center; margin-top:0.6rem; }
+
+/* modal */
+.modal-backdrop { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:1rem; background:rgba(2,6,23,0.45); z-index:60; }
+.modal { max-width:720px; width:100%; padding:1.25rem; position:relative; }
+.close { position:absolute; right:0.65rem; top:0.5rem; border:0; background:transparent; font-size:1.15rem; cursor:pointer; }
+
+/* loading */
+.loading { padding:2rem; text-align:center; color:#64748b; }
+
+/* responsive */
+@media (max-width: 920px) {
+  .mini-page { grid-template-columns: 1fr; grid-template-areas: "header" "content" "sidebar" "footer"; }
+  .sidebar { order:3; }
+  .content { order:2; }
+  .header { flex-direction:column; align-items:flex-start; gap:0.5rem; }
+}
+
+/* transitions (direction aware) */
+.slide-left-enter-active, .slide-left-leave-active, .slide-right-enter-active, .slide-right-leave-active { transition:all .36s cubic-bezier(.2,.9,.2,1); }
+.slide-left-enter-from { transform: translateX(32px); opacity:0; }
+.slide-left-leave-to { transform: translateX(-24px); opacity:0; }
+.slide-right-enter-from { transform: translateX(-32px); opacity:0; }
+.slide-right-leave-to { transform: translateX(24px); opacity:0; }
+</style>
